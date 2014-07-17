@@ -1,0 +1,293 @@
+---
+title: "Reproducible Research: Peer Assessment 1"
+author: "Kendall Parks"
+output: html_document
+---
+# Reproducible Research: Peer Assessment 1
+### Kendall Parks
+The goal of this assignment is to create a report that presents my research in a neat and reproducible way.
+
+# Background Info
+It is now possible to collect a large amount of data about personal movement using activity monitoring devices such as a Fitbit, Nike Fuelband, or Jawbone Up. These type of devices are part of the "quantified self" movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. But these data remain under-utilized both because the raw data are hard to obtain and there is a lack of statistical methods and software for processing and interpreting the data.
+
+This assignment makes use of data from a personal activity monitoring device. This device collects data at 5 minute intervals through out the day. The data consists of two months of data from an anonymous individual collected during the months of October and November, 2012 and include the number of steps taken in 5 minute intervals each day.
+
+# Functions
+I created several helper functions to improve the readability and reduce repetition of the code. They will be necessary, later in this report, to complete some of the calculations. The functions are described below.
+
+- __get.day__
+    + Returns all of the step records from the 'data' data frame for the given day. 
+    + 'date' can either be a string or a Date object.
+    + 'df' is a data frame.
+
+```r
+get.day = function(date, df=data) {
+  date = as.Date(date)
+  start = as.POSIXct(date, tz="UTC")
+  df[df$datetime >= start & df$datetime < as.POSIXct(date + 1, tz="UTC"), 1]
+}
+```
+
+- __daily.steps__
+    + Returns the sum of the steps taken for a given day.
+    + 'date' and 'df' are the same as for __get.day__.
+
+```r
+daily.steps = function(date, df=data, na.rm=F) {
+  sum(get.day(date, df), na.rm=na.rm)
+}
+```
+
+- __count.steps__
+    + Calculates the steps taken each day and returns a vector of the totals.
+    + 'd' is a vector of strings or Date objects.
+    + 'df' is the same as for __get.day__
+
+```r
+count.steps = function(d=dates, df=data) {
+  sapply(d, daily.steps, df)
+}
+```
+
+- __average.intervals__
+    + Averages the number of steps for all 288 5-minute intervals across all 61 days.
+    + The global index is the index of the data frame.
+    + The interval index is the number of the interval (in our case, 1-288).
+
+```r
+average.intervals = function(df=data, intervals=288) {
+  # Create blank data frame to hold sums and counts.
+  averages = data.frame(sum=rep(0, intervals), count=rep(0, intervals))
+  
+  # Loop through each row in the data frame.
+  for(globalindex in 1:nrow(df)) {
+    
+    # Calculate sums of steps for each interval.
+    if(!is.na(df$steps[globalindex])) {
+      intindex = (globalindex - 1) %% intervals + 1 # Map the global index to the interval index.
+      averages$sum[intindex]   = averages$sum[intindex] + df$steps[globalindex]
+      averages$count[intindex] = averages$count[intindex] + 1
+    }
+  }
+  # Return the average for each interval.
+  # NA's don't influence the average, because they were tested for and ignored.
+  return(averages$sum / averages$count) 
+}
+```
+
+# Getting/Reading the Data
+The following code is written to be very easy to use. It can be dropped into RStudio and it will work, without any setup. Additionally, the code is designed skip the most time-consuming bits of computation (like downloading data and copying large data frames), if the relevant variables already exist in the workspace. This means any variables that are manually modified by the user should be removed from the workspace, before running the modified script
+
+```r
+# Set up variables.
+url = "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip"
+zipfile = paste(getwd(), "/amd.zip", sep="")
+xfile = "activity.csv"
+
+# Download the zip file, if it doesn't exist in the working directory.
+if(!file.exists(zipfile)) {
+  download.file(url, zipfile)
+} else message("File already downloaded")
+
+# Unzip the zip file, if it hasn't been extracted yet.
+if(!any(list.files(getwd()) == xfile)) {
+  message("Unzipping")
+  unzip(zipfile)
+} else message("File already unzipped")
+
+# Read in the data, if it hasn't been read yet.
+if(!exists("rawdata", inherits=F)) {
+  rawdata = read.csv(xfile)
+} else message("Data already read in to current environment")
+```
+
+
+# Pre-Processing the Data
+__Converting to POSIX__  
+To begin pre-processing the data, I combined the dates and times and converted them to class POSIX. This code pads the 'interval' field with zeroes, inserts a colon, pastes to 'date' and then converts to POSIX.
+
+
+```r
+pattern = "^([0-9]{2})([0-9]{2})$"
+replace = "\\1:\\2:00"
+sources = sprintf("%04d", rawdata$interval)
+datetime = strptime(paste(rawdata$date, sub(pattern, replace, sources), sep=" "), "%F %T", tz="UTC")
+```
+
+__Some Conveniences__  
+Then, the dates and times were extracted into their own vectors to save writing some code in the future.  
+
+```r
+dates = as.character(unique(as.Date(datetime)))
+times = unique(format(datetime, "%T"))
+```
+
+__Creating a new data frame__  
+Finally, I combined all of this into a new data frame, thus preserving the raw data in case it was needed later.
+
+```r
+data = data.frame(steps = rawdata$steps, datetime) 
+```
+
+# Question 1: What is the mean total number of steps taken per day?
+The first task was to calculate the mean and median number of steps taken per day, and create a histogram of the individual days.  I first used my 'count.steps' function to create a vector with the sum of steps taken each day.  
+
+```r
+steps = count.steps(dates, data)
+```
+ 
+__Plots__  
+Then, I was able to plot the data. I included a boxplot in addition to the histogram. 
+
+```r
+layout(matrix(c(1,1,2), 1, 3, byrow=T))
+par(cex.lab=1.55)
+
+hist(steps, breaks=seq(0, 22500, length.out=19), xaxt="n", xlab="Steps per Day", 
+     main="", ylim=c(0,15), col='green')
+axis(1, seq(0, 22500, by=2500), seq(0, 22500, by=2500), tck=-.025, lwd.ticks=2)
+axis(1, seq(1250, 21250, by=2500), labels=F)
+
+boxplot(steps, ylab="Steps Per Day", col="Red", pch=20)
+```
+
+![plot of chunk unnamed-chunk-10](figure/unnamed-chunk-10.png) 
+
+__Summary Statistics__  
+The mean number of steps per day was __10766.19__ and the median was __10765__.
+
+# Question 2: What is the average daily activity pattern?  
+Instead of averaging up the total number of steps taken each day, I then needed to average up each interval across all days. I used my 'average.intervals' function to do this.
+
+__Averaging each interval__
+
+```r
+intervalaverages = average.intervals(data)
+```
+
+__Plot__  
+This allowed me to create a time series of the average daily activity pattern. The red line is the maximum average value for one interval.
+
+```r
+xlab = "Time (24-hour clock)"
+ylab = "Average Steps Per Interval"
+plot(intervalaverages, type="l", xaxt="n", xlab=xlab, ylab=ylab, bty="n")
+axis(1, seq(1, 336, by=48), labels=c(substr(times[seq(1, 288, by=48)], 1, 5), "24:00"))
+abline(v=match(max(intervalaverages), intervalaverages), col='red')
+legend("topright", legend=c("Avg. Steps", "Max Value"), col=c("Black", "Red"), lwd=1, cex=1.1)
+```
+
+![plot of chunk unnamed-chunk-12](figure/unnamed-chunk-12.png) 
+
+__Summary Statistics__  
+The interval beginning at __08:35:00__ was the busiest, with __206.1698__ steps.  
+
+# Question 3: What Happens When We Impute Data for the Missing Values?
+I found that there were __2304__ missing values in the dataset. Instead of ignoring those values, I wanted to replace them with the average value for their corresponding intervals. For example, all NA's found in the first interval would be replaced by the mean value for interval one, across all days.
+
+__Imputing the Data__  
+So, first I copied the data into a new data frame which would also contain the imputed values. Then, just as I had done earlier, I mapped the global indices to the interval indices to impute the average values into the new data frame.
+
+```r
+impdata = data
+
+for(globalindex in 1:nrow(impdata)){
+ intindex = (globalindex - 1) %% 288 + 1 # Map the global index to the interval index.
+ if(is.na(impdata[globalindex, 1])) 
+   impdata[globalindex, 1] = round(intervalaverages[intindex])
+}
+```
+
+__Re-calculating the Steps Taken Each Day__  
+Now that I had filled in the missing data, I was able to re-calculate and plot the steps for each day.
+
+```r
+impsteps = count.steps(dates, impdata)
+
+# Plot the data in a histogram and boxplot.
+layout(matrix(c(1,1,2), 1, 3, byrow=T))
+
+hist(impsteps, breaks=seq(0, 22500, length.out=19), xaxt="n", xlab="Steps per Day", 
+     main="", ylim=c(0,20), col='green')
+axis(1, seq(0, 22500, by=2500), seq(0, 22500, by=2500), tck=-.025, lwd.ticks=2)
+axis(1, seq(1250, 21250, by=2500), labels=F)
+
+boxplot(impsteps, ylab="Steps Per Day", col="Red", pch=20)
+```
+
+![plot of chunk unnamed-chunk-14](figure/unnamed-chunk-14.png) 
+
+__Summary Statistics__  
+The mean number of steps taken each day was __10765.64__, and the median was __10762__.
+
+__Impact__  
+Below are the previous histograms and boxplots again, this time, aligned side-by-side with their pre- and post-imputation counterparts. As you can see, by imputing the values, the middle portion of the histogram grew dramatically, and the boxplot shows fewer statistical outliers. Essentially, the data became more skewed toward the mean.
+
+
+```r
+par(mfrow=c(1,2))
+
+# Plot the histograms.
+hist(steps, breaks=seq(0, 22500, length.out=19), xaxt="n", xlab="Steps per Day", 
+     main="Pre-Imputation", ylim=c(0,15), col='green')
+axis(1, seq(0, 22500, by=2500), seq(0, 22500, by=2500), tck=-.045, lwd.ticks=2, cex.axis=.55)
+axis(1, seq(1250, 21250, by=2500), labels=F, tck=-.02)
+
+hist(impsteps, breaks=seq(0, 22500, length.out=19), xaxt="n", xlab="Steps per Day", 
+     main="Post-Imputation", ylim=c(0,20), col='green')
+axis(1, seq(0, 22500, by=2500), seq(0, 22500, by=2500), tck=-.045, lwd.ticks=2, cex.axis=.55)
+axis(1, seq(1250, 21250, by=2500), labels=F, tck=-.02)
+```
+
+![plot of chunk unnamed-chunk-15](figure/unnamed-chunk-151.png) 
+
+```r
+# Plot the boxplots.
+boxplot(impsteps, ylab="Steps Per Day", col="Red", pch=20, main="Pre-Imputation")
+boxplot(steps, ylab="Steps Per Day", col="Red", pch=20, main="Post-Imputation")
+```
+
+![plot of chunk unnamed-chunk-15](figure/unnamed-chunk-152.png) 
+
+# Question 4: Are there differences in activity patterns between weekdays and weekends?
+Finally, I wanted to know how weekday activity differed from weekend activity. To find out, I added a factor field to the imputed data frame which labelled that data as either "Weekend" or "Weekday".
+
+```r
+businessday = as.factor(sapply(X=weekdays(impdata$datetime) %in% c("Saturday", "Sunday"), FUN=ifelse, "Weekend", "Weekday"))
+impdata$busday = businessday
+```
+
+__Re-calculating the Interval Averages__  
+Next, I called my 'average.intervals' function again to compute the intervals with the imputed data, but this time, I subsetted the data by weekend and weekday.
+
+```r
+weekdayintervalaverages = average.intervals(impdata[impdata$busday == "Weekday",])
+weekendintervalaverages = average.intervals(impdata[impdata$busday == "Weekend",])
+```
+
+__Plots__  
+Finally, I was able to plot the time-series data by business day classification.
+
+```r
+# Set parameters.
+par(mfrow=c(2,1), mar=c(2,0,0.5,0), oma=c(1.4,3,1.4,3), cex=1.25, cex.axis=.4, lwd=2, lwd.ticks=1)
+
+# Plot Weekday data.
+plot(weekdayintervalaverages, type="l", axes=F, bty="n", ylim=c(0, 250), col="dodgerblue2")
+axis(3, seq(1, 336, by=48), labels=F, tck=.075)
+axis(2, seq(0, 250, by=50), seq(0, 250, by=50))
+mtext("Weekdays", 3, outer=T)
+
+# Plot Weekend data.
+plot(weekendintervalaverages, type="l", axes=F, bty="n", ylim=c(0, 250), col="dodgerblue2")
+axis(1, seq(1, 336, by=48), labels=c(substr(times[seq(1, 288, by=48)], 1, 5), "24:00"))
+axis(2, seq(0, 250, by=50), seq(0, 250, by=50))
+mtext("Weekends", 1, outer=T)
+
+mtext("Avg. Steps per Interval", 2, line=2, outer=T)
+```
+
+![plot of chunk unnamed-chunk-18](figure/unnamed-chunk-18.png) 
+
+__Difference__  
+The most noticeable difference between weekdays and weekends for this person seems to be in the morning, between 6:00 and 8:00. This person tends to take more steps on weekdays than weekends. 
